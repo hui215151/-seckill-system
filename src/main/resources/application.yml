@@ -1,1 +1,45 @@
+server:
+  port: 8080
 
+spring:
+  application:
+    name: seckill-system
+  
+  # MySQL
+  datasource:
+    type: com.alibaba.druid.pool.DruidDataSource
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/seckill?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai
+    username: root
+    password: hhh123123
+  
+  # Redis
+  redis:
+    host: localhost
+    port: 6379
+    password: 
+    database: 0
+    lettuce:
+      pool:
+        max-active: 8
+        max-idle: 8
+        min-idle: 0
+  
+  # RabbitMQ
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    virtual-host: /
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 1
+
+# MyBatis-Plus
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.seckill.entity
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
