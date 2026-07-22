@@ -1,25 +1,26 @@
-seckill-system/
-├── README.md                 # 项目说明（最重要）
-├── sql/
-│   └── seckill.sql           # 数据库表结构
-├── docs/
-│   ├── architecture.png      # 架构图（自己画或找图）
-│   ├── flowchart.png         # 秒杀流程图
-│   └── jmeter-result.png     # 压测结果截图
-├── src/
-│   └── main/
-│       ├── java/
-│       │   └── com/
-│       │       └── seckill/
-│       │           ├── controller/
-│       │           ├── service/
-│       │           ├── mapper/
-│       │           ├── entity/
-│       │           ├── config/          # Redis、RabbitMQ配置
-│       │           ├── utils/           # 工具类
-│       │           └── lua/             # Lua脚本
-│       └── resources/
-│           ├── application.yml
-│           └── lua/
-│               └── stock_deduct.lua     # 扣库存Lua脚本
-└── pom.xml
+# 高并发秒杀系统
+
+模拟电商大促秒杀场景，核心解决高并发下库存扣减一致性。
+
+## 技术栈
+- SpringBoot 2.7.x
+- Redis 6.x（库存预扣、限流、防重）
+- RabbitMQ 3.x（异步下单削峰）
+- MySQL 8.x
+- MyBatis-Plus
+- JWT
+- JMeter（压测）
+
+## 核心亮点
+| 问题 | 方案 |
+|------|------|
+| 超卖 | Redis Lua原子预扣 + MySQL乐观锁 + 本地事务表对账，三层兜底 |
+| 高并发压垮数据库 | RabbitMQ异步削峰，90%请求不直接查库 |
+| 重复点击/脚本刷单 | Guava RateLimiter令牌桶限流 + Redis SETNX防重 |
+| 缓存与数据库不一致 | 延迟双删 + 本地事务表定时回补 |
+
+## 压测结果
+- 1000并发，直接查库：TPS 50，超卖，响应时间 2s
+- 1000并发，优化后：TPS 800，零超卖，响应时间 200ms
+
+## 项目结构
