@@ -4,23 +4,32 @@
 
 ## 技术栈
 - SpringBoot 2.7.x
-- Redis 6.x（库存预扣、限流、防重）
-- RabbitMQ 3.x（异步下单削峰）
+- Redis 6.x
+- RabbitMQ 3.x
 - MySQL 8.x
 - MyBatis-Plus
 - JWT
-- JMeter（压测）
 
 ## 核心亮点
 | 问题 | 方案 |
 |------|------|
-| 超卖 | Redis Lua原子预扣 + MySQL乐观锁 + 本地事务表对账，三层兜底 |
-| 高并发压垮数据库 | RabbitMQ异步削峰，90%请求不直接查库 |
+| 超卖 | Redis Lua原子预扣 + MySQL乐观锁 + 本地事务表对账 |
+| 高并发压垮数据库 | RabbitMQ异步削峰 |
 | 重复点击/脚本刷单 | Guava RateLimiter令牌桶限流 + Redis SETNX防重 |
-| 缓存与数据库不一致 | 延迟双删 + 本地事务表定时回补 |
 
 ## 压测结果
 - 1000并发，直接查库：TPS 50，超卖，响应时间 2s
 - 1000并发，优化后：TPS 800，零超卖，响应时间 200ms
 
-## 项目结构
+## 快速启动
+1. 克隆项目：`git clone https://github.com/hui215151/-seckill-system.git`
+2. 创建数据库，执行 `sql/seckill.sql`
+3. 修改 `application.yml` 中的 Redis、MySQL、RabbitMQ 配置
+4. 启动项目
+
+## 接口文档
+| 接口 | 说明 |
+|------|------|
+| POST /api/seckill/goods | 获取秒杀商品列表 |
+| POST /api/seckill/do | 执行秒杀 |
+| GET /api/seckill/result | 查询秒杀结果 |
