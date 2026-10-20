@@ -11,6 +11,7 @@ import com.seckill.mapper.SeckillGoodsMapper;
 import com.seckill.mapper.SeckillOrderMapper;
 import com.seckill.mapper.TransactionLogMapper;
 import com.seckill.service.SeckillService;
+import com.seckill.support.SeckillWindow;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -74,10 +75,26 @@ public class SeckillServiceImpl implements SeckillService {
     
     @Override
     public SeckillOrder doSeckill(Long userId, Long goodsId) {
-        // 1. 防重：用户同一商品只能秒杀一次
+        // 0. 商品存在性与活动时间校验
+        //    商品元信息走主键查询（走索引，成本低）；库存扣减仍然只走 Redis。
+        SeckillGoods goods = seckillGoodsMapper.selectById(goodsId);
+        if (goods == null) {
+            throw new RuntimeException("商品不存在");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        if (!SeckillWindow.isStarted(goods.getStartTime(), now)) {
+            throw new RuntimeException("活动未开始");
+        }
+        if (SeckillWindow.isEnded(goods.getEndTime(), now)) {
+            throw new RuntimeException("活动已结束");
+        }
+        
+        // 1. 防重：同一用户同一商品在活动期间只能秒杀一次
+        //    key 的 TTL 覆盖到活动结束，避免原来固定 5 秒导致 5 秒后可重复下单。
         String userKey = USER_SECKILL_KEY_PREFIX + userId + ":" + goodsId;
+        long ttlSeconds = SeckillWindow.ttlSeconds(goods.getEndTime(), now);
         Boolean isFirst = redisTemplate.opsForValue()
-                .setIfAbsent(userKey, "1", 5, TimeUnit.SECONDS);
+                .setIfAbsent(userKey, "1", ttlSeconds, TimeUnit.SECONDS);
         if (Boolean.FALSE.equals(isFirst)) {
             throw new RuntimeException("请勿重复秒杀");
         }
@@ -139,6 +156,13 @@ public class SeckillServiceImpl implements SeckillService {
         wrapper.eq("user_id", userId).eq("goods_id", goodsId)
                .orderByDesc("create_time").last("limit 1");
         return seckillOrderMapper.selectOne(wrapper);
+    }
+    
+    @Override
+    public boolean isTransactionPending(String transactionId) {
+        TransactionLog entry = transactionLogMapper.selectOne(
+                new QueryWrapper<TransactionLog>().eq("transaction_id", transactionId));
+        return entry != null && Integer.valueOf(0).equals(entry.getStatus());
     }
     
     /**

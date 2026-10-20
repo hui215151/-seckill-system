@@ -7,8 +7,10 @@ import com.seckill.mapper.SeckillGoodsMapper;
 import com.seckill.service.SeckillService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
+import javax.annotation.PostConstruct;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -17,8 +19,20 @@ import java.util.concurrent.TimeUnit;
 @RequestMapping("/api/seckill")
 public class SeckillController {
     
-    // 令牌桶限流：每秒放行 100 个请求
-    private final RateLimiter rateLimiter = RateLimiter.create(100);
+    /**
+     * 令牌桶限流，QPS 可通过 seckill.rate-limit.qps 配置（默认 1000）。
+     * 压测时可用 -Dseckill.rate-limit.qps=100000 临时放开。
+     */
+    @Value("${seckill.rate-limit.qps:1000}")
+    private double rateLimitQps;
+    
+    private RateLimiter rateLimiter;
+    
+    @PostConstruct
+    public void initRateLimiter() {
+        this.rateLimiter = RateLimiter.create(rateLimitQps);
+        log.info("秒杀限流已启用：{} QPS", rateLimitQps);
+    }
     
     @Autowired
     private SeckillService seckillService;

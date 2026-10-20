@@ -24,14 +24,23 @@ public class SeckillOrderConsumer {
         long deliveryTag = mqMessage.getMessageProperties().getDeliveryTag();
         
         try {
+            // 幂等：事务已成功/已失败/不存在（如手工清库）时直接确认并跳过，
+            // 避免重复建单和「孤儿消息」凭库存继续下单。
+            if (!seckillService.isTransactionPending(message.getTransactionId())) {
+                log.warn("跳过重复或已失效的消息：transactionId={}", message.getTransactionId());
+                channel.basicAck(deliveryTag, false);
+                return;
+            }
+            
             log.info("收到秒杀消息：{}", message);
             seckillService.createOrder(message);
-            // 手动确认
             channel.basicAck(deliveryTag, false);
+            
         } catch (Exception e) {
-            log.error("消费失败：{}", e.getMessage());
-            // 拒绝消息，重新入队（或根据重试次数决定是否丢弃）
-            channel.basicNack(deliveryTag, false, true);
+            log.error("消费失败，丢弃该消息（事务表已记录失败，由对账任务回补库存）：{}", e.getMessage());
+            // requeue=false：避免一条失败消息无限重投堵死队列。
+            // 失败状态已由 createOrder 写入 transaction_log，定时任务会回补 Redis 库存。
+            channel.basicNack(deliveryTag, false, false);
         }
     }
 }

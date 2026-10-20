@@ -82,6 +82,13 @@
             <artifactId>druid-spring-boot-starter</artifactId>
             <version>1.2.18</version>
         </dependency>
+        
+        <!-- 测试 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
     
     <build>

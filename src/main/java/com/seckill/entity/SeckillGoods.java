@@ -15,6 +15,7 @@ public class SeckillGoods {
     private Long id;
     
     private String goodsName;
+    private String category;
     private String goodsImg;
     private BigDecimal originalPrice;
     private BigDecimal seckillPrice;

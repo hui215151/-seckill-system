@@ -1,10 +1,20 @@
+-- ============================================================
+-- 秒杀系统初始化脚本（演示数据）
+-- 注意：会 DROP 并重建三张表，请勿在存有数据的库上直接执行。
+-- 时间使用 NOW() 相对生成，导入后即可直接演示「进行中/未开始/已结束」。
+-- ============================================================
 CREATE DATABASE IF NOT EXISTS seckill DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE seckill;
+
+DROP TABLE IF EXISTS seckill_order;
+DROP TABLE IF EXISTS transaction_log;
+DROP TABLE IF EXISTS seckill_goods;
 
 -- 秒杀商品表
 CREATE TABLE seckill_goods (
     id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '商品ID',
     goods_name VARCHAR(100) NOT NULL COMMENT '商品名称',
+    category VARCHAR(32) NOT NULL DEFAULT '其他' COMMENT '商品分类',
     goods_img VARCHAR(200) COMMENT '商品图片',
     original_price DECIMAL(10,2) NOT NULL COMMENT '原价',
     seckill_price DECIMAL(10,2) NOT NULL COMMENT '秒杀价',
@@ -15,7 +25,8 @@ CREATE TABLE seckill_goods (
     create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
     update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_start_time(start_time),
-    INDEX idx_end_time(end_time)
+    INDEX idx_end_time(end_time),
+    INDEX idx_category(category)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='秒杀商品表';
 
 -- 订单表
@@ -44,7 +55,22 @@ CREATE TABLE transaction_log (
     INDEX idx_status_create_time(status, create_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='本地事务日志表';
 
--- 插入测试数据
-INSERT INTO seckill_goods (goods_name, original_price, seckill_price, stock_count, start_time, end_time) VALUES
-('iPhone 15 Pro', 8999.00, 6999.00, 100, '2026-07-22 00:00:00', '2026-07-23 00:00:00'),
-('MacBook Pro', 14999.00, 11999.00, 50, '2026-07-22 00:00:00', '2026-07-23 00:00:00');
+-- ============================================================
+-- 演示商品：10 个进行中 + 1 个未开始 + 1 个已结束
+-- 时间全部相对 NOW() 生成，任何时间点导入都能演示三种状态
+-- ============================================================
+INSERT INTO seckill_goods
+    (goods_name, category, goods_img, original_price, seckill_price, stock_count, start_time, end_time)
+VALUES
+    ('iPhone 15 Pro 256G',        '手机数码', 'https://picsum.photos/seed/iphone15/400/400',   8999.00, 6999.00, 500, NOW() - INTERVAL 2 HOUR, NOW() + INTERVAL 7 DAY),
+    ('MacBook Pro 14 M3',         '电脑办公', 'https://picsum.photos/seed/macbook/400/400',   14999.00, 11999.00, 200, NOW() - INTERVAL 2 HOUR, NOW() + INTERVAL 7 DAY),
+    ('小米 14 Ultra',             '手机数码', 'https://picsum.photos/seed/mi14/400/400',        6499.00,  5499.00, 300, NOW() - INTERVAL 2 HOUR, NOW() + INTERVAL 7 DAY),
+    ('AirPods Pro 2',             '手机数码', 'https://picsum.photos/seed/airpods/400/400',     1899.00,  1499.00, 400, NOW() - INTERVAL 2 HOUR, NOW() + INTERVAL 7 DAY),
+    ('iPad Air 11 M2',            '电脑办公', 'https://picsum.photos/seed/ipad/400/400',        4799.00,  3999.00, 150, NOW() - INTERVAL 2 HOUR, NOW() + INTERVAL 7 DAY),
+    ('戴森 V12 无线吸尘器',        '家用电器', 'https://picsum.photos/seed/dyson/400/400',       3499.00,  2799.00, 120, NOW() - INTERVAL 2 HOUR, NOW() + INTERVAL 7 DAY),
+    ('索尼 WH-1000XM5 头戴耳机',   '手机数码', 'https://picsum.photos/seed/sony/400/400',        2899.00,  2299.00, 180, NOW() - INTERVAL 2 HOUR, NOW() + INTERVAL 7 DAY),
+    ('海尔 10kg 洗烘一体机',       '家用电器', 'https://picsum.photos/seed/haier/400/400',       3999.00,  3199.00,  80, NOW() - INTERVAL 2 HOUR, NOW() + INTERVAL 7 DAY),
+    ('兰蔻小黑瓶精华 50ml',        '美妆个护', 'https://picsum.photos/seed/lancome/400/400',     1080.00,   799.00, 300, NOW() - INTERVAL 2 HOUR, NOW() + INTERVAL 7 DAY),
+    ('三只松鼠坚果大礼包',         '食品生鲜', 'https://picsum.photos/seed/nuts/400/400',         199.00,   129.00, 1000, NOW() - INTERVAL 2 HOUR, NOW() + INTERVAL 7 DAY),
+    ('任天堂 Switch OLED',        '游戏影音', 'https://picsum.photos/seed/switch/400/400',      2599.00,  2099.00, 100, NOW() + INTERVAL 2 DAY,  NOW() + INTERVAL 4 DAY),
+    ('戴森 Supersonic 吹风机',     '家用电器', 'https://picsum.photos/seed/hairdryer/400/400',   2999.00,  2399.00,  60, NOW() - INTERVAL 5 DAY,  NOW() - INTERVAL 3 DAY);
