@@ -1,3 +1,5 @@
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -6,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -17,18 +20,20 @@ import java.util.concurrent.atomic.AtomicLong;
  * 秒杀接口压测器（JDK 11 单文件，无需额外依赖）。
  *
  * 用法：
- *   java benchmark/LoadTest.java [baseUrl] [goodsId] [threads] [seconds] [baseUserId]
+ *   java benchmark/LoadTest.java [baseUrl] [goodsId] [threads] [seconds] [baseUserId] [jwtSecret]
  *
  * 示例：
  *   java benchmark/LoadTest.java http://localhost:8080 1 200 15
  *
  * 说明：
- * - 每个请求使用不同的 userId，避免被防重逻辑拦截；
+ * - 每个请求使用不同的 userId，并在本地直接签发 JWT（与服务端共享 secret），避免被防重拦截；
  * - 统计 200 成功、业务拒绝（售罄/限流）、其它错误；
  * - 输出总请求数、TPS、P50/P95/P99 延迟；
  * - 压测前请把目标商品库存调大（见 benchmark/README.md），否则库存耗尽后测到的是失败路径。
  */
 public class LoadTest {
+
+    private static final String DEFAULT_SECRET = "dev-seckill-jwt-secret-change-me-please-0123456789";
 
     public static void main(String[] args) throws Exception {
         String baseUrl = args.length > 0 ? args[0] : "http://localhost:8080";
@@ -36,8 +41,9 @@ public class LoadTest {
         int threads = args.length > 2 ? Integer.parseInt(args[2]) : 200;
         int seconds = args.length > 3 ? Integer.parseInt(args[3]) : 15;
         long baseUserId = args.length > 4 ? Long.parseLong(args[4]) : System.currentTimeMillis() * 1000L;
+        String jwtSecret = args.length > 5 ? args[5] : DEFAULT_SECRET;
 
-        String url = baseUrl + "/api/seckill/do?goodsId=" + goodsId + "&userId=";
+        String url = baseUrl + "/api/seckill/do?goodsId=" + goodsId;
 
         HttpClient client = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
@@ -67,7 +73,8 @@ public class LoadTest {
                     while (System.nanoTime() < deadline) {
                         long userId = baseUserId + sequence.incrementAndGet();
                         HttpRequest request = HttpRequest.newBuilder()
-                                .uri(URI.create(url + userId))
+                                .uri(URI.create(url))
+                                .header("Authorization", "Bearer " + jwt(userId, jwtSecret))
                                 .timeout(Duration.ofSeconds(10))
                                 .POST(HttpRequest.BodyPublishers.noBody())
                                 .build();
@@ -126,6 +133,31 @@ public class LoadTest {
         }
         System.out.println();
         System.out.println("压测后请用 SQL 校验库存与订单数是否一致，见 benchmark/README.md");
+    }
+
+    /**
+     * 本地签发 HS256 JWT，payload 中带 userId，服务端拦截器会校验签名。
+     */
+    private static String jwt(long userId, String secret) {
+        try {
+            long now = System.currentTimeMillis() / 1000;
+            String header = base64Url("{\"alg\":\"HS256\",\"typ\":\"JWT\"}");
+            String payload = base64Url("{\"sub\":\"bench-" + userId + "\",\"userId\":" + userId
+                    + ",\"iat\":" + now + ",\"exp\":" + (now + 3600) + "}");
+            String signingInput = header + "." + payload;
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            String signature = Base64.getUrlEncoder().withoutPadding()
+                    .encodeToString(mac.doFinal(signingInput.getBytes(StandardCharsets.UTF_8)));
+            return signingInput + "." + signature;
+        } catch (Exception e) {
+            throw new IllegalStateException("JWT 签发失败", e);
+        }
+    }
+
+    private static String base64Url(String value) {
+        return Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(value.getBytes(StandardCharsets.UTF_8));
     }
 
     private static long percentile(long[] sorted, int p) {

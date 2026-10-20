@@ -9,6 +9,17 @@ USE seckill;
 DROP TABLE IF EXISTS seckill_order;
 DROP TABLE IF EXISTS transaction_log;
 DROP TABLE IF EXISTS seckill_goods;
+DROP TABLE IF EXISTS sys_user;
+
+-- 用户表（登录用，密码为 BCrypt）
+CREATE TABLE sys_user (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    username VARCHAR(64) NOT NULL UNIQUE COMMENT '登录名',
+    password VARCHAR(100) NOT NULL COMMENT 'BCrypt 密码',
+    nickname VARCHAR(64) COMMENT '昵称',
+    status TINYINT NOT NULL DEFAULT 1 COMMENT '1-正常 0-禁用',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
 
 -- 秒杀商品表
 CREATE TABLE seckill_goods (
@@ -54,6 +65,14 @@ CREATE TABLE transaction_log (
     update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_status_create_time(status, create_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='本地事务日志表';
+
+-- ============================================================
+-- 演示账号：alice / bob / carol，密码统一为 123456
+-- ============================================================
+INSERT INTO sys_user (username, password, nickname, status) VALUES
+    ('alice', '$2a$10$upgJAYfJbhvCJEhmI6bwU.h9sWnuf0ZLIyztR33U6sHr.qJkKU1U.', 'Alice', 1),
+    ('bob',   '$2a$10$upgJAYfJbhvCJEhmI6bwU.h9sWnuf0ZLIyztR33U6sHr.qJkKU1U.', 'Bob',   1),
+    ('carol', '$2a$10$upgJAYfJbhvCJEhmI6bwU.h9sWnuf0ZLIyztR33U6sHr.qJkKU1U.', 'Carol', 1);
 
 -- ============================================================
 -- 演示商品：10 个进行中 + 1 个未开始 + 1 个已结束

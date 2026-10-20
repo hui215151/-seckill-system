@@ -4,6 +4,7 @@ import com.google.common.util.concurrent.RateLimiter;
 import com.seckill.entity.SeckillGoods;
 import com.seckill.entity.SeckillOrder;
 import com.seckill.mapper.SeckillGoodsMapper;
+import com.seckill.security.JwtAuthInterceptor;
 import com.seckill.service.SeckillService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,8 +53,9 @@ public class SeckillController {
      * 执行秒杀
      */
     @PostMapping("/do")
-    public SeckillOrder doSeckill(@RequestParam Long userId, 
-                                   @RequestParam Long goodsId) {
+    public SeckillOrder doSeckill(
+            @RequestAttribute(JwtAuthInterceptor.ATTR_USER_ID) Long userId,
+            @RequestParam Long goodsId) {
         // 1. 限流
         if (!rateLimiter.tryAcquire(1, TimeUnit.SECONDS)) {
             throw new RuntimeException("活动太火爆，请稍后重试");
@@ -67,8 +69,9 @@ public class SeckillController {
      * 查询秒杀结果
      */
     @GetMapping("/result")
-    public SeckillOrder getResult(@RequestParam Long userId, 
-                                   @RequestParam Long goodsId) {
+    public SeckillOrder getResult(
+            @RequestAttribute(JwtAuthInterceptor.ATTR_USER_ID) Long userId,
+            @RequestParam Long goodsId) {
         return seckillService.getSeckillResult(userId, goodsId);
     }
 }

@@ -55,11 +55,29 @@
             <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
         
-        <!-- JWT -->
+        <!-- JWT：0.9.x 依赖已移除的 javax.xml.bind，在 JDK 11 上会 NoClassDefFoundError，这里用 0.11.5 -->
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
-            <artifactId>jjwt</artifactId>
-            <version>0.9.1</version>
+            <artifactId>jjwt-api</artifactId>
+            <version>0.11.5</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>0.11.5</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>0.11.5</version>
+            <scope>runtime</scope>
+        </dependency>
+        
+        <!-- 只引入 BCrypt，不引入完整 Spring Security -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-crypto</artifactId>
         </dependency>
         
         <!-- Guava 限流 -->
