@@ -35,10 +35,10 @@ public class TransactionCheckJob {
         
         List<TransactionLog> failedList = transactionLogMapper.selectList(wrapper);
         
-        for (TransactionLog log : failedList) {
+        for (TransactionLog txLog : failedList) {
             try {
                 // 解析 businessId 获取 goodsId
-                String[] parts = log.getBusinessId().split(":");
+                String[] parts = txLog.getBusinessId().split(":");
                 Long goodsId = Long.valueOf(parts[1]);
                 
                 // 回补 Redis 库存
@@ -46,11 +46,11 @@ public class TransactionCheckJob {
                 redisTemplate.opsForValue().increment(stockKey);
                 
                 // 更新事务表为已处理
-                log.setStatus(3); // 3-已回补
-                transactionLogMapper.updateById(log);
+                txLog.setStatus(3); // 3-已回补
+                transactionLogMapper.updateById(txLog);
                 
                 log.info("库存回补成功：transactionId={}, goodsId={}", 
-                        log.getTransactionId(), goodsId);
+                        txLog.getTransactionId(), goodsId);
                 
             } catch (Exception e) {
                 log.error("库存回补失败：{}", e.getMessage());

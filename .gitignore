@@ -1,0 +1,19 @@
+# Build output
+target/
+*.class
+
+# Runtime logs
+logs/
+*.log
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Local-only environment notes (contains machine-specific ports/credentials)
+本地环境说明.md
+
+# OS
+Thumbs.db
+.DS_Store

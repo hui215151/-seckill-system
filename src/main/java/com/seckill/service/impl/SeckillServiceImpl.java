@@ -1,6 +1,7 @@
 package com.seckill.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.seckill.config.RabbitMQConfig;
 import com.seckill.config.RedisConfig;
 import com.seckill.entity.SeckillGoods;
@@ -14,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +33,13 @@ public class SeckillServiceImpl implements SeckillService {
     
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
+    
+    /**
+     * Lua 脚本专用：参数/返回值都按字符串序列化，
+     * 避免 GenericJackson2JsonRedisSerializer 把 "1" 写成带引号的 "1" 导致 tonumber 失败。
+     */
+    @Autowired
+    private StringRedisTemplate stringRedisTemplate;
     
     @Autowired
     private DefaultRedisScript<Long> stockDeductScript;
@@ -75,7 +84,7 @@ public class SeckillServiceImpl implements SeckillService {
         
         // 2. Redis 预扣库存（Lua 脚本保证原子性）
         String stockKey = STOCK_KEY_PREFIX + goodsId;
-        Long remainStock = redisTemplate.execute(
+        Long remainStock = stringRedisTemplate.execute(
                 stockDeductScript,
                 Collections.singletonList(stockKey),
                 "1"
@@ -163,11 +172,10 @@ public class SeckillServiceImpl implements SeckillService {
             order.setStatus(0);
             seckillOrderMapper.insert(order);
             
-            // 更新事务表为成功
-            TransactionLog logEntry = new TransactionLog();
-            logEntry.setTransactionId(transactionId);
-            logEntry.setStatus(1);
-            transactionLogMapper.updateById(logEntry);
+            // 更新事务表为成功（按 transaction_id 更新；原代码 updateById 的 id 为 null，实际不会更新任何行）
+            transactionLogMapper.update(null, new UpdateWrapper<TransactionLog>()
+                    .eq("transaction_id", transactionId)
+                    .set("status", 1));
             
             // 更新 Redis 订单状态
             String statusKey = ORDER_STATUS_KEY_PREFIX + transactionId;
@@ -178,10 +186,9 @@ public class SeckillServiceImpl implements SeckillService {
         } catch (Exception e) {
             log.error("订单创建失败：{}", e.getMessage());
             // 更新事务表为失败（定时任务会扫描回补 Redis 库存）
-            TransactionLog logEntry = new TransactionLog();
-            logEntry.setTransactionId(message.getTransactionId());
-            logEntry.setStatus(2);
-            transactionLogMapper.updateById(logEntry);
+            transactionLogMapper.update(null, new UpdateWrapper<TransactionLog>()
+                    .eq("transaction_id", message.getTransactionId())
+                    .set("status", 2));
             throw e;
         }
     }
