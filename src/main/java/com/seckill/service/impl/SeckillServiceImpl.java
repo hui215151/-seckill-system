@@ -19,6 +19,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.PostConstruct;
@@ -162,59 +163,60 @@ public class SeckillServiceImpl implements SeckillService {
     public boolean isTransactionPending(String transactionId) {
         TransactionLog entry = transactionLogMapper.selectOne(
                 new QueryWrapper<TransactionLog>().eq("transaction_id", transactionId));
-        return entry != null && Integer.valueOf(0).equals(entry.getStatus());
+        // 0-处理中、2-曾失败待重试 都允许继续消费；1-成功 或记录不存在则跳过
+        return entry != null && !Integer.valueOf(1).equals(entry.getStatus());
+    }
+    
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
+    public void markTransactionFailed(String transactionId) {
+        transactionLogMapper.update(null, new UpdateWrapper<TransactionLog>()
+                .eq("transaction_id", transactionId)
+                .set("status", 2));
     }
     
     /**
-     * MQ 消费者调用：创建订单
+     * MQ 消费者调用：创建订单。
+     * 失败时不在这里写失败状态：本方法带事务，抛异常会回滚；
+     * 由消费者调用 markTransactionFailed（REQUIRES_NEW）单独落库。
      */
     @Transactional(rollbackFor = Exception.class)
     public void createOrder(SeckillMessage message) {
-        try {
-            Long goodsId = message.getGoodsId();
-            Long userId = message.getUserId();
-            String transactionId = message.getTransactionId();
-            
-            // 查询商品信息
-            SeckillGoods goods = seckillGoodsMapper.selectById(goodsId);
-            if (goods == null || goods.getStockCount() <= 0) {
-                throw new RuntimeException("商品库存不足");
-            }
-            
-            // 乐观锁扣减数据库库存
-            int affected = seckillGoodsMapper.deductStock(goodsId, goods.getVersion());
-            if (affected <= 0) {
-                throw new RuntimeException("库存扣减失败，可能已被其他用户抢购");
-            }
-            
-            // 创建订单
-            SeckillOrder order = new SeckillOrder();
-            order.setUserId(userId);
-            order.setGoodsId(goodsId);
-            order.setGoodsName(goods.getGoodsName());
-            order.setSeckillPrice(goods.getSeckillPrice());
-            order.setStatus(0);
-            seckillOrderMapper.insert(order);
-            
-            // 更新事务表为成功（按 transaction_id 更新；原代码 updateById 的 id 为 null，实际不会更新任何行）
-            transactionLogMapper.update(null, new UpdateWrapper<TransactionLog>()
-                    .eq("transaction_id", transactionId)
-                    .set("status", 1));
-            
-            // 更新 Redis 订单状态
-            String statusKey = ORDER_STATUS_KEY_PREFIX + transactionId;
-            redisTemplate.opsForValue().set(statusKey, "SUCCESS", 10, TimeUnit.MINUTES);
-            
-            log.info("订单创建成功：userId={}, goodsId={}", userId, goodsId);
-            
-        } catch (Exception e) {
-            log.error("订单创建失败：{}", e.getMessage());
-            // 更新事务表为失败（定时任务会扫描回补 Redis 库存）
-            transactionLogMapper.update(null, new UpdateWrapper<TransactionLog>()
-                    .eq("transaction_id", message.getTransactionId())
-                    .set("status", 2));
-            throw e;
+        Long goodsId = message.getGoodsId();
+        Long userId = message.getUserId();
+        String transactionId = message.getTransactionId();
+        
+        // 查询商品信息
+        SeckillGoods goods = seckillGoodsMapper.selectById(goodsId);
+        if (goods == null || goods.getStockCount() <= 0) {
+            throw new RuntimeException("商品库存不足");
         }
+        
+        // 乐观锁扣减数据库库存
+        int affected = seckillGoodsMapper.deductStock(goodsId, goods.getVersion());
+        if (affected <= 0) {
+            throw new RuntimeException("库存扣减失败，可能已被其他用户抢购");
+        }
+        
+        // 创建订单
+        SeckillOrder order = new SeckillOrder();
+        order.setUserId(userId);
+        order.setGoodsId(goodsId);
+        order.setGoodsName(goods.getGoodsName());
+        order.setSeckillPrice(goods.getSeckillPrice());
+        order.setStatus(0);
+        seckillOrderMapper.insert(order);
+        
+        // 更新事务表为成功（按 transaction_id 更新）
+        transactionLogMapper.update(null, new UpdateWrapper<TransactionLog>()
+                .eq("transaction_id", transactionId)
+                .set("status", 1));
+        
+        // 更新 Redis 订单状态
+        String statusKey = ORDER_STATUS_KEY_PREFIX + transactionId;
+        redisTemplate.opsForValue().set(statusKey, "SUCCESS", 10, TimeUnit.MINUTES);
+        
+        log.info("订单创建成功：userId={}, goodsId={}", userId, goodsId);
     }
     
     /**

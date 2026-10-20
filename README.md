@@ -35,17 +35,20 @@
                  └──────────────┬───────────────┘
                                 ▼
                     RabbitMQ: seckill.order.queue
+                                │
                                 ▼
                  ┌──────────────────────────────┐
                  │  SeckillOrderConsumer        │
                  │  幂等校验 + 手动 ACK          │
-                 └──────────────┬───────────────┘
-                                ▼
-                 ┌──────────────────────────────┐
-                 │  createOrder                 │
-                 │  MySQL 乐观锁扣减 + 建订单    │
-                 └──────────────┬───────────────┘
-                                ▼
+                 └───────┬──────────────┬───────┘
+                    成功 │              │ 失败（nack, requeue=false）
+                         ▼              ▼
+                 ┌──────────────┐   retry queue（TTL 5s）
+                 │ createOrder  │       │ 到期重回主队列
+                 │ MySQL 乐观锁 │       │ 重试 3 次仍失败
+                 │ 扣减 + 建单  │       ▼
+                 └──────┬───────┘   seckill.order.dlq（人工排查）
+                        ▼
                  TransactionCheckJob：扫描失败事务，回补 Redis 库存
 ```
 
@@ -56,8 +59,8 @@
 | 超卖 | Lua 脚本原子预扣 Redis 库存 + MySQL 乐观锁兜底 | `lua/stock_deduct.lua`、`SeckillGoodsMapper#deductStock` |
 | 重复下单 | Redis `SETNX` 防重，TTL 覆盖整个活动周期 | `SeckillServiceImpl#doSeckill` |
 | 数据库被打垮 | 请求先扣 Redis，订单异步落库（MQ 削峰） | `RabbitMQConfig`、`SeckillOrderConsumer` |
-| 消息重复/脏消息 | 消费前校验事务表状态，非「处理中」直接 ACK 跳过 | `SeckillOrderConsumer` |
-| 消费失败 | 记录失败事务、`nack` 不重回队列，对账任务回补库存 | `TransactionCheckJob` |
+| 消息重复/脏消息 | 消费前校验事务表状态，非「待处理/待重试」直接 ACK 跳过 | `SeckillOrderConsumer` |
+| 消费失败 | 重试队列（5s TTL）重试 3 次，仍失败转入死信队列；失败事务由对账任务回补库存 | `RabbitMQConfig`、`SeckillOrderConsumer` |
 | 流量削峰 | Guava `RateLimiter`，QPS 可配置 | `seckill.rate-limit.qps` |
 
 ## 实测结果
@@ -124,6 +127,8 @@ curl "http://localhost:8080/api/seckill/result?userId=1001&goodsId=1"
 | 配置 | 默认值 | 说明 |
 |---|---|---|
 | `seckill.rate-limit.qps` | 1000 | 令牌桶 QPS，可用 `-Dseckill.rate-limit.qps=...` 覆盖 |
+| `seckill.mq.max-retries` | 3 | 消费失败最大重试次数（不含首次） |
+| `seckill.mq.retry-ttl-ms` | 5000 | 重试队列 TTL，到期后自动回主队列 |
 | `spring.datasource.druid.max-active` | 50 | 连接池上限 |
 | `spring.rabbitmq.listener.simple.prefetch` | 1 | 消费端预取，配合手动 ACK |
 
@@ -135,7 +140,10 @@ curl "http://localhost:8080/api/seckill/result?userId=1001&goodsId=1"
 mvn test
 ```
 
-当前包含 `SeckillWindowTest`（8 个用例），覆盖活动时间边界和防重 key TTL。
+当前包含 `SeckillWindowTest`（8 个用例）和 `SeckillRetryPolicyTest`（5 个用例），覆盖活动时间边界、防重 TTL 和重试次数统计。
+
+> 升级提示：主队列新增了死信参数，若本地已存在旧队列，启动前先删除
+> `seckill.order.queue`、`seckill.order.retry`、`seckill.order.dlq`，让应用重新声明拓扑。
 
 ## 目录结构
 
@@ -159,7 +167,7 @@ mvn test
 - **单机单实例**：没有分布式锁、没有分库分表，Redis/MySQL/MQ 都是单点；
 - **商品元信息每次请求查一次 MySQL**（主键查询），库存扣减才走 Redis；如需进一步压榨 QPS，可把活动时间缓存到 Redis；
 - **启动会覆盖 Redis 库存**：`initStockToRedis()` 每次启动按数据库库存重置，重启前应确保队列已清空；
-- **没有死信队列**：消费失败的消息直接丢弃，靠事务表 + 对账任务兜底；
+- **死信队列只做隔离**：`seckill.order.dlq` 堆积后需要人工排查/重放，暂未提供管理页面；重试间隔固定 5s，没有指数退避；
 - **无支付/关单流程**，订单状态仅用于演示。
 
 ## 相关文档

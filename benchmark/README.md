@@ -16,6 +16,8 @@
 ```bash
 # 1) 清空 MQ 队列（关键：否则上一轮的孤儿消息会继续建单）
 rabbitmqctl purge_queue seckill.order.queue
+rabbitmqctl purge_queue seckill.order.retry
+rabbitmqctl purge_queue seckill.order.dlq
 
 # 2) 重置库存与订单（stock 按测试目标调整）
 mysql -h127.0.0.1 -P3307 -uroot -p seckill -e "
